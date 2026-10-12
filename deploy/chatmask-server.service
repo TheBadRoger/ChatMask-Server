@@ -1,0 +1,25 @@
+[Unit]
+Description=ChatMask P2P hole-punch coordination
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+User=chatmask-server
+Group=chatmask-server
+StateDirectory=chatmask-server
+StateDirectoryMode=0700
+ExecStart=/usr/local/bin/chatmask-server --key /var/lib/chatmask-server/server.key
+Restart=on-failure
+RestartSec=5
+TimeoutStopSec=10
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+PrivateTmp=true
+UMask=0077
+MemoryMax=256M
+TasksMax=128
+LimitNOFILE=2048
+
+[Install]
+WantedBy=multi-user.target

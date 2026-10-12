@@ -1,0 +1,25 @@
+[package]
+name = "chatmask-server"
+version = "0.1.0"
+edition = "2021"
+rust-version = "1.94"
+autotests = false
+
+[[test]]
+name = "coordination"
+path = "tests/coordination.rs"
+
+[dependencies]
+clap = { version = "4.5", features = ["derive"] }
+futures = "0.3"
+libp2p = { version = "=0.57.0", default-features = false, features = ["tokio", "tcp", "noise", "yamux", "ed25519", "request-response", "cbor", "macros", "quic"] }
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "signal", "time", "net"] }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+
+[profile.release]
+opt-level = "s"
+lto = "thin"
+codegen-units = 1
+strip = true
