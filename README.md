@@ -74,3 +74,25 @@ cargo fmt --check
 ## 旧部署升级
 
 现在只开放 UDP 7001；不再需要 TCP7000、`--udp-listen`、旧 JSON probe/签名确认或 `/chatmask/punch/1.0.0`。请同时升级客户端与服务器。旧密钥仍可复用，旧中继、旧服务和容器需先停止以避免端口冲突；旧数据卷不自动删除。
+
+## 活动日志
+
+服务端记录带 Unix 时间戳的连接、断开、节点登记、节点查询、失败原因、打洞通知发送与客户端确认、通知失败和登记过期。记录 PeerId、IP 和端口，不记录聊天正文或密钥。日志写入标准输出，由 Docker 保存和轮转。
+
+查看最近日志：
+```sh
+docker compose logs --timestamps --tail=100 server
+```
+实时跟随输出（Ctrl+C 只停止查看日志）：
+```sh
+docker compose logs --timestamps --tail=100 -f server
+```
+前台启动显示实时输出：
+```sh
+docker compose up --build
+```
+更新源码后重建：`docker compose up -d --build`。
+
+`punch_coordination_dispatched` 表示双方通知已提交，`punch_notice_response ... Ack` 表示客户端确认收到通知。服务器无法观察双方后续直连，不能据此宣布打洞或聊天成功，最终结果以客户端为准。
+
+新版客户端使用 `/join 公网IP或域名` 一次添加服务器，之后每次启动自动连接和登记；`/peerid` 只显示本机 PeerId，双方用 `/chat 对方PeerId` 聊天。

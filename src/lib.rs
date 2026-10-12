@@ -75,9 +75,11 @@ impl Registry {
     pub fn remove(&mut self, peer: PeerId) {
         self.clients.remove(&peer);
     }
-    pub fn expire(&mut self) {
+    pub fn expire(&mut self) -> usize {
+        let before = self.clients.len();
         let ttl = self.ttl;
         self.clients.retain(|_, r| r.seen.elapsed() < ttl);
+        before - self.clients.len()
     }
     pub fn register(&mut self, peer: PeerId, endpoint: SocketAddr) -> Response {
         self.expire();
@@ -153,9 +155,10 @@ pub fn socket_address(address: &Multiaddr) -> Option<SocketAddr> {
     }
 }
 #[derive(NetworkBehaviour)]
+// Check connection limits before notifying protocol behaviours about a new connection.
 pub struct Behaviour {
-    pub control: request_response::cbor::Behaviour<Request, Response>,
     limits: connection_limits::Behaviour,
+    pub control: request_response::cbor::Behaviour<Request, Response>,
 }
 pub fn build(args: &Args, key: identity::Keypair) -> Result<Swarm<Behaviour>> {
     let mut swarm = SwarmBuilder::with_existing_identity(key)
