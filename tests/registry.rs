@@ -33,3 +33,29 @@ fn only_quic_addresses_produce_udp_candidates() {
         "127.0.0.1:9000".parse().unwrap()
     );
 }
+
+#[test]
+fn private_candidates_are_bounded_filtered_and_removed_with_registration() {
+    let mut registry = Registry::new(2, 60);
+    let peer = PeerId::random();
+    let observed = "203.0.113.10:5000".parse().unwrap();
+    let private: SocketAddr = "192.168.1.5:4000".parse().unwrap();
+    let candidates = [
+        private,
+        private,
+        "127.0.0.1:4000".parse().unwrap(),
+        "8.8.8.8:4000".parse().unwrap(),
+        "0.0.0.0:4000".parse().unwrap(),
+        "10.0.0.1:0".parse().unwrap(),
+    ];
+    assert!(
+        matches!(registry.register_candidates(peer, observed, &candidates), Response::Registered { endpoint, .. } if endpoint == observed)
+    );
+    assert_eq!(registry.candidates(peer), vec![private]);
+    assert!(matches!(
+        registry.register_candidates(peer, observed, &[private; 9]),
+        Response::Error { .. }
+    ));
+    registry.remove(peer);
+    assert!(registry.candidates(peer).is_empty());
+}

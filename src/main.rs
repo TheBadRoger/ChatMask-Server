@@ -39,8 +39,8 @@ async fn main() -> Result<()> {
                 },
                 SwarmEvent::Behaviour(BehaviourEvent::Control(request_response::Event::Message { peer, message: request_response::Message::Request { request, channel, .. }, .. })) => {
                     let response = match request {
-                        Request::Register => {
-                            let response = match endpoints.get(&peer) { Some(endpoint) => registry.register(peer, *endpoint), None => Response::Error { message: "QUIC connection required".into() } };
+                        Request::Register { candidates } => {
+                            let response = match endpoints.get(&peer) { Some(endpoint) => registry.register_candidates(peer, *endpoint, &candidates), None => Response::Error { message: "QUIC connection required".into() } };
                             log(format_args!("registration peer={peer} response={response:?}")); response
                         },
                         Request::Connect { peer: target } => {
@@ -48,10 +48,10 @@ async fn main() -> Result<()> {
                             if notices.len() >= 2048 { Response::Error { message: "Coordination busy".into() } }
                             else { match target.parse().map_err(|_| "Invalid target".into()).and_then(|target| registry.connect(peer, target).map(|pair| (target, pair))) {
                                 Ok((target, (a, b, attempt))) => {
-                                    let to_target = swarm.behaviour_mut().control.send_request(&target, Request::Punch { peer: peer.to_string(), endpoint: a, attempt: attempt.clone(), timeout_ms: 5000 });
-                                    let to_source = swarm.behaviour_mut().control.send_request(&peer, Request::Punch { peer: target.to_string(), endpoint: b, attempt: attempt.clone(), timeout_ms: 5000 });
+                                    let to_target = swarm.behaviour_mut().control.send_request(&target, Request::Punch { peer: peer.to_string(), endpoint: a, candidates: registry.candidates(peer), attempt: attempt.clone(), timeout_ms: 12000 });
+                                    let to_source = swarm.behaviour_mut().control.send_request(&peer, Request::Punch { peer: target.to_string(), endpoint: b, candidates: registry.candidates(target), attempt: attempt.clone(), timeout_ms: 12000 });
                                     notices.insert(to_target, (attempt.clone(), target)); notices.insert(to_source, (attempt.clone(), peer));
-                                    log(format_args!("punch_coordination_dispatched source={peer} target={target} source_endpoint={a} target_endpoint={b} attempt={attempt}"));
+                                    log(format_args!("punch_coordination_dispatched source={peer} target={target} source_endpoint={a} target_endpoint={b} source_candidates={:?} target_candidates={:?} attempt={attempt}", registry.candidates(peer), registry.candidates(target)));
                                     Response::Started { attempt }
                                 },
                                 Err(error) => { log(format_args!("node_query_failed source={peer} target={target:?} reason={error:?}")); Response::Error { message: error.to_string() } },

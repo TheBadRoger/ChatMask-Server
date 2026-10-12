@@ -47,11 +47,11 @@ chatmask-client --bind 0.0.0.0 --server /ip4/服务器公网IP/udp/7001/quic-v1/
 
 ## 协议和资源
 
-协议为 `/chatmask/punch/2.0.0`，CBOR request-response，类型见 `src/lib.rs`：
+协议为 `/chatmask/punch/3.0.0`，CBOR request-response，类型见 `src/lib.rs`：
 
 1. 客户端建立经过认证的 QUIC 控制连接并发出 Register。
 2. 服务器回复 Registered（观察到的 UDP 来源 endpoint、有效期）。身份来自连接认证，地址来自实际连接，不接受客户端声称的任意 endpoint。
-3. A 请求 Connect（B的PeerId）。双方已登记时向双方发出 Punch（对端身份、endpoint、attempt、最长 5000ms），并向 A 回复 Started。Started 仅表示信令已安排，不表示打洞成功。
+3. A 请求 Connect（B的PeerId）。双方已登记时向双方发出 Punch（对端身份、endpoint、attempt、最长 12000ms），并向 A 回复 Started。Started 仅表示信令已安排，不表示打洞成功。
 4. 客户端响应 Ack，并从原端口进行有限次数的同时拨号。实际 QUIC 连接必须验证预期 PeerId，聊天继续原有消息加密握手。
 5. 客户端按服务器有效期刷新登记，默认每20秒；60秒过期或断线时移除登记。登记仅在内存，重启后需重新登记。
 
@@ -96,3 +96,13 @@ docker compose up --build
 `punch_coordination_dispatched` 表示双方通知已提交，`punch_notice_response ... Ack` 表示客户端确认收到通知。服务器无法观察双方后续直连，不能据此宣布打洞或聊天成功，最终结果以客户端为准。
 
 新版客户端使用 `/join 公网IP或域名` 一次添加服务器，之后每次启动自动连接和登记；`/peerid` 只显示本机 PeerId，双方用 `/chat 对方PeerId` 聊天。
+
+## 锥形 NAT 与同网直连
+
+协议升级为 `/chatmask/punch/3.0.0`，需要同时更新服务端与两个客户端，再执行 `docker compose up -d --build`。服务器密钥和已有配置可以保留，旧 2.0 客户端不兼容。
+
+Register 携带最多 8 个客户端实际 QUIC 监听地址中的内网候选。服务器只保留私有单播地址及非零端口，公网端点仍从认证连接观察；公网来源不能注入回环地址，候选按身份登记、TTL 过期、断线清理。Connect 时仅将候选发送给本轮连接双方，不提供列表查询或中继。
+
+新版客户端优先排列内网候选，同时探测公网端点；按双方 PeerId 确定唯一握手方向。一方用原 QUIC 监听套接字发送 UDP 探测并等待入站，另一方复用监听端口发起握手。单轮窗口 12 秒，QUIC 握手超时 10 秒。双方可通过内网可达路径绕过不支持 hairpin 的 NAT，但校园网设备隔离仍可能阻断。不同目标映射不同的对称 NAT、多层 NAT 不保证成功。
+
+候选地址来自客户端声明，不能作为真实位置的证明；客户端仍验证目标 PeerId，限制候选数量、地址类型和尝试时间。双方会获知对方的私有地址及公网地址，日志也会记录候选。此实现不是完整 ICE/STUN、TURN 或 libp2p DCUtR。

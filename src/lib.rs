@@ -14,7 +14,7 @@ use std::{
     time::{Duration, Instant},
 };
 pub type Result<T> = std::result::Result<T, Box<dyn Error + Send + Sync>>;
-pub const PROTOCOL: &str = "/chatmask/punch/2.0.0";
+pub const PROTOCOL: &str = "/chatmask/punch/3.0.0";
 #[derive(Parser, Debug)]
 #[command(version, about = "ChatMask QUIC hole-punch coordination server")]
 pub struct Args {
@@ -29,13 +29,16 @@ pub struct Args {
 }
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub enum Request {
-    Register,
+    Register {
+        candidates: Vec<SocketAddr>,
+    },
     Connect {
         peer: String,
     },
     Punch {
         peer: String,
         endpoint: SocketAddr,
+        candidates: Vec<SocketAddr>,
         attempt: String,
         timeout_ms: u32,
     },
@@ -56,6 +59,7 @@ pub enum Response {
 }
 struct Registration {
     endpoint: SocketAddr,
+    candidates: Vec<SocketAddr>,
     seen: Instant,
     last_connect: Option<Instant>,
 }
@@ -81,7 +85,40 @@ impl Registry {
         self.clients.retain(|_, r| r.seen.elapsed() < ttl);
         before - self.clients.len()
     }
+    pub fn candidates(&self, peer: PeerId) -> Vec<SocketAddr> {
+        self.clients
+            .get(&peer)
+            .map(|r| r.candidates.clone())
+            .unwrap_or_default()
+    }
     pub fn register(&mut self, peer: PeerId, endpoint: SocketAddr) -> Response {
+        self.register_candidates(peer, endpoint, &[])
+    }
+    pub fn register_candidates(
+        &mut self,
+        peer: PeerId,
+        endpoint: SocketAddr,
+        candidates: &[SocketAddr],
+    ) -> Response {
+        if candidates.len() > 8 {
+            return Response::Error {
+                message: "Too many local candidates".into(),
+            };
+        }
+        let mut filtered = Vec::new();
+        for candidate in candidates {
+            let local = match candidate.ip() {
+                std::net::IpAddr::V4(ip) => ip.is_private(),
+                std::net::IpAddr::V6(ip) => ip.is_unique_local(),
+            };
+            if candidate.port() != 0
+                && candidate.is_ipv4() == endpoint.is_ipv4()
+                && (local || (endpoint.ip().is_loopback() && candidate.ip().is_loopback()))
+                && !filtered.contains(candidate)
+            {
+                filtered.push(*candidate);
+            }
+        }
         self.expire();
         if !self.clients.contains_key(&peer) && self.clients.len() >= self.max {
             return Response::Error {
@@ -93,6 +130,7 @@ impl Registry {
             peer,
             Registration {
                 endpoint,
+                candidates: filtered,
                 seen: Instant::now(),
                 last_connect,
             },

@@ -100,10 +100,18 @@ async fn real_server_registers_observed_udp_addresses_signals_both_peers_and_cli
         .unwrap();
     a.dial(control.clone()).unwrap();
     b.dial(control).unwrap();
-    a.behaviour_mut()
-        .send_request(&server_peer, Request::Register);
-    b.behaviour_mut()
-        .send_request(&server_peer, Request::Register);
+    a.behaviour_mut().send_request(
+        &server_peer,
+        Request::Register {
+            candidates: vec!["10.20.30.40:9001".parse().unwrap()],
+        },
+    );
+    b.behaviour_mut().send_request(
+        &server_peer,
+        Request::Register {
+            candidates: vec!["10.20.30.40:9002".parse().unwrap()],
+        },
+    );
     let (mut endpoint_a, mut endpoint_b) = (None, None);
     tokio::time::timeout(Duration::from_secs(10), async {
         while endpoint_a.is_none() || endpoint_b.is_none() {
@@ -128,16 +136,16 @@ async fn real_server_registers_observed_udp_addresses_signals_both_peers_and_cli
                 event = a.select_next_some() => if let SwarmEvent::Behaviour(request_response::Event::Message { peer, message, .. }) = event {
                     assert_eq!(peer, server_peer);
                     match message {
-                        request_response::Message::Request { request: Request::Punch { peer, endpoint, attempt, .. }, channel, .. } => {
-                            assert_eq!(peer, b_peer.to_string()); assert_eq!(endpoint, endpoint_b); notice_a = Some(attempt);
+                        request_response::Message::Request { request: Request::Punch { peer, endpoint, candidates, attempt, timeout_ms }, channel, .. } => {
+                            assert_eq!(peer, b_peer.to_string()); assert_eq!(endpoint, endpoint_b); assert_eq!(candidates, vec!["10.20.30.40:9002".parse().unwrap()]); assert_eq!(timeout_ms, 12000); notice_a = Some(attempt);
                             a.behaviour_mut().send_response(channel, Response::Ack).unwrap();
                         },
                         request_response::Message::Response { response: Response::Started { attempt }, .. } => started = Some(attempt),
                         _ => {},
                     }
                 },
-                event = b.select_next_some() => if let SwarmEvent::Behaviour(request_response::Event::Message { peer: sender, message: request_response::Message::Request { request: Request::Punch { peer, endpoint, attempt, .. }, channel, .. }, .. }) = event {
-                    assert_eq!(sender, server_peer); assert_eq!(peer, a_peer.to_string()); assert_eq!(endpoint, endpoint_a); notice_b = Some(attempt);
+                event = b.select_next_some() => if let SwarmEvent::Behaviour(request_response::Event::Message { peer: sender, message: request_response::Message::Request { request: Request::Punch { peer, endpoint, candidates, attempt, timeout_ms }, channel, .. }, .. }) = event {
+                    assert_eq!(sender, server_peer); assert_eq!(peer, a_peer.to_string()); assert_eq!(endpoint, endpoint_a); assert_eq!(candidates, vec!["10.20.30.40:9001".parse().unwrap()]); assert_eq!(timeout_ms, 12000); notice_b = Some(attempt);
                     b.behaviour_mut().send_response(channel, Response::Ack).unwrap();
                 }
             }
